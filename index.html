@@ -643,6 +643,17 @@
     <div class="header-sub" id="header-sub" onclick="openProfileEdit()" style="cursor:pointer" title="Profil bearbeiten">Lade Profil…</div>
   </div>
 
+  <!-- Delete Confirm Modal -->
+  <div id="delete-modal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.75);padding:20px;box-sizing:border-box;">
+    <div style="background:var(--card);border-radius:16px;padding:24px;width:100%;max-width:360px;margin:auto;margin-top:200px;border:1px solid rgba(255,23,68,0.3);">
+      <p style="margin:0 0 20px;font-size:15px;text-align:center;">Eintrag wirklich löschen?</p>
+      <div style="display:flex;gap:10px;">
+        <button id="delete-cancel" style="flex:1;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:var(--bg2);color:var(--text);font-size:14px;cursor:pointer;">Abbrechen</button>
+        <button id="delete-confirm" style="flex:1;padding:12px;border-radius:8px;border:none;background:#ff1744;color:#fff;font-size:14px;font-weight:700;cursor:pointer;">Löschen</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Profile Edit Modal -->
   <div id="profile-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.7);padding:20px;box-sizing:border-box;">
     <div style="background:var(--card);border-radius:16px;padding:24px;width:100%;max-width:360px;margin:auto;margin-top:60px;border:1px solid rgba(0,230,118,0.2);">
@@ -1386,26 +1397,48 @@ function setupPhotoInput() {
   });
 }
 
-// ── Swipe-to-Delete ────────────────────────────────────────────
+// ── Swipe-to-Delete ──────────────────────────────────────────────────────────
+function closeAllSwipes(except) {
+  document.querySelectorAll('.swipe-container').forEach(c => {
+    if (c === except) return;
+    const it = c.querySelector('.swipe-item');
+    const db = c.querySelector('.swipe-delete-btn');
+    if (it) { it.style.transition = 'transform 0.2s ease'; it.style.transform = 'translateX(0)'; }
+    if (db) { db.style.transition = 'transform 0.2s ease'; db.style.transform = 'translateX(100%)'; db.classList.remove('visible'); }
+    c._swipeRevealed = false;
+  });
+}
+
 function attachSwipe(container) {
   const item = container.querySelector('.swipe-item');
   const deleteBtn = container.querySelector('.swipe-delete-btn');
   if (!item || !deleteBtn) return;
 
-  const THRESHOLD = 60;
-  let startX = 0;
-  let startY = 0;
-  let currentX = 0;
-  let dragging = false;
-  let revealed = false;
-  let isScrolling = null;
+  const THRESHOLD = 50;
+  let startX = 0, startY = 0, dragging = false, isScrolling = null;
+  container._swipeRevealed = false;
+
+  function snapOpen() {
+    item.style.transition = 'transform 0.2s ease';
+    item.style.transform = 'translateX(-80px)';
+    deleteBtn.style.transition = 'transform 0.2s ease';
+    deleteBtn.style.transform = 'translateX(0px)';
+    deleteBtn.classList.add('visible');
+    container._swipeRevealed = true;
+  }
+
+  function snapClose() {
+    item.style.transition = 'transform 0.2s ease';
+    item.style.transform = 'translateX(0px)';
+    deleteBtn.style.transition = 'transform 0.2s ease';
+    deleteBtn.style.transform = 'translateX(100%)';
+    deleteBtn.classList.remove('visible');
+    container._swipeRevealed = false;
+  }
 
   function onStart(x, y) {
-    startX = x;
-    startY = y;
-    currentX = 0;
-    dragging = true;
-    isScrolling = null;
+    startX = x; startY = y;
+    dragging = true; isScrolling = null;
     item.style.transition = 'none';
     deleteBtn.style.transition = 'none';
   }
@@ -1414,126 +1447,143 @@ function attachSwipe(container) {
     if (!dragging) return;
     const dx = x - startX;
     const dy = y - startY;
-    // Determine scroll vs swipe
-    if (isScrolling === null) {
-      isScrolling = Math.abs(dy) > Math.abs(dx);
-    }
-    if (isScrolling) return;
-    if (dx > 0 && !revealed) return; // no right swipe when closed
-    currentX = revealed ? Math.min(0, dx) : Math.min(0, dx);
-    const clamp = Math.max(-80, Math.min(0, currentX));
-    item.style.transform = `translateX(${clamp}px)`;
-    deleteBtn.style.transform = `translateX(${100 + clamp / 80 * 100 - 100}%)`;
-    deleteBtn.style.transform = `translateX(${Math.max(0, 100 + clamp)}%)`;
-    // Simpler: show delete btn based on swipe
-    deleteBtn.style.transform = `translateX(${Math.max(0, -clamp)}px) translateX(${100 - Math.min(100, -clamp / 80 * 100)}%)`;
+    if (isScrolling === null) isScrolling = Math.abs(dy) > Math.abs(dx) * 1.2;
+    if (isScrolling) { dragging = false; snapClose(); return; }
+    if (dx > 5) { snapClose(); return; }
+    const offset = Math.max(-80, Math.min(0, dx));
+    item.style.transform = `translateX(${offset}px)`;
+    // Delete button slides in from right proportionally
+    deleteBtn.style.transform = `translateX(${80 + offset}px)`;
   }
 
   function onEnd(x) {
     if (!dragging) return;
     dragging = false;
     const dx = x - startX;
-    item.style.transition = 'transform 0.2s ease';
-    deleteBtn.style.transition = 'transform 0.2s ease';
-
-    if (dx <= -THRESHOLD) {
-      // Reveal delete button
-      item.style.transform = 'translateX(-80px)';
-      deleteBtn.style.transform = 'translateX(0)';
-      deleteBtn.classList.add('visible');
-      revealed = true;
-    } else {
-      // Snap back
-      item.style.transform = 'translateX(0)';
-      deleteBtn.style.transform = 'translateX(100%)';
-      deleteBtn.classList.remove('visible');
-      revealed = false;
-    }
+    if (dx <= -THRESHOLD) snapOpen();
+    else snapClose();
   }
 
-  // Touch events
+  // Touch
   container.addEventListener('touchstart', e => {
-    // Close other open swipes
-    document.querySelectorAll('.swipe-item').forEach(el => {
-      if (el !== item && el.style.transform && el.style.transform !== 'translateX(0px)') {
-        el.style.transition = 'transform 0.2s ease';
-        el.style.transform = 'translateX(0)';
-        const db2 = el.closest('.swipe-container')?.querySelector('.swipe-delete-btn');
-        if (db2) { db2.style.transition = 'transform 0.2s ease'; db2.style.transform = 'translateX(100%)'; db2.classList.remove('visible'); }
-      }
-    });
+    closeAllSwipes(container);
     const t = e.touches[0];
     onStart(t.clientX, t.clientY);
   }, { passive: true });
+
   container.addEventListener('touchmove', e => {
-    if (!isScrolling) e.preventDefault();
+    if (isScrolling === false) e.preventDefault();
     const t = e.touches[0];
     onMove(t.clientX, t.clientY);
   }, { passive: false });
+
   container.addEventListener('touchend', e => {
     onEnd(e.changedTouches[0].clientX);
-  });
+  }, { passive: true });
 
-  // Mouse events (desktop)
+  // Mouse (desktop)
   container.addEventListener('mousedown', e => {
     if (e.button !== 0) return;
+    closeAllSwipes(container);
     onStart(e.clientX, e.clientY);
-    e.preventDefault();
   });
-  document.addEventListener('mousemove', e => {
-    if (!dragging) return;
-    onMove(e.clientX, e.clientY);
-  });
-  document.addEventListener('mouseup', e => {
-    if (!dragging) return;
-    onEnd(e.clientX);
-  });
+  document.addEventListener('mousemove', e => { if (dragging) onMove(e.clientX, e.clientY); });
+  document.addEventListener('mouseup',   e => { if (dragging) onEnd(e.clientX); });
 
-  // Close when clicking elsewhere (but NOT when clicking delete button)
-  document.addEventListener('click', e => {
-    if (container.querySelector('.swipe-delete-btn').contains(e.target)) return;
-    if (!container.contains(e.target) && revealed) {
-      item.style.transition = 'transform 0.2s ease';
-      item.style.transform = 'translateX(0)';
-      deleteBtn.style.transition = 'transform 0.2s ease';
-      deleteBtn.style.transform = 'translateX(100%)';
-      deleteBtn.classList.remove('visible');
-      revealed = false;
+  // Delete-Button: touchstart nicht weiter propagieren (verhindert snap-close)
+  deleteBtn.addEventListener('touchstart', e => {
+    e.stopPropagation();
+  }, { passive: true });
+
+  // Tap ausserhalb schliesst (aber nicht wenn Delete-Modal offen oder Delete-Btn getroffen)
+  document.addEventListener('touchstart', e => {
+    if (!container.contains(e.target) && container._swipeRevealed) {
+      if (document.getElementById('delete-modal').style.display !== 'none') return;
+      snapClose();
     }
+  }, { passive: true });
+}
+
+// ── Delete Confirm ──────────────────────────────────────────────────────────
+function confirmDelete(id, table, containerEl) {
+  const modal = document.getElementById('delete-modal');
+  modal.style.display = 'block';
+
+  function onCancel() {
+    modal.style.display = 'none';
+    const item = containerEl.querySelector('.swipe-item');
+    const btn  = containerEl.querySelector('.swipe-delete-btn');
+    if (item) { item.style.transition = 'transform 0.2s ease'; item.style.transform = 'translateX(0)'; }
+    if (btn)  { btn.style.transition  = 'transform 0.2s ease'; btn.style.transform  = 'translateX(100%)'; btn.classList.remove('visible'); }
+    containerEl._swipeRevealed = false;
+    cleanup();
+  }
+
+  async function onConfirm() {
+    modal.style.display = 'none';
+    cleanup();
+    const { error } = await db.from(table).delete().eq('id', id);
+    if (error) { showToast('Fehler beim Löschen: ' + error.message, false); return; }
+    containerEl.style.transition = 'opacity 0.3s ease, max-height 0.3s ease';
+    containerEl.style.opacity = '0';
+    containerEl.style.maxHeight = containerEl.offsetHeight + 'px';
+    setTimeout(() => { containerEl.style.maxHeight = '0'; containerEl.style.marginBottom = '0'; }, 10);
+    setTimeout(() => { containerEl.remove(); }, 330);
+    showToast('Eintrag gelöscht! 🗑️');
+    loadDashboard();
+    if (table === 'workouts' && typeof loadActivityCalendar === 'function') loadActivityCalendar();
+  }
+
+  function cleanup() {
+    document.getElementById('delete-cancel').removeEventListener('click', onCancel);
+    document.getElementById('delete-confirm').removeEventListener('click', onConfirm);
+  }
+
+  document.getElementById('delete-cancel').addEventListener('click', onCancel);
+  document.getElementById('delete-confirm').addEventListener('click', onConfirm);
+}
+
+// ── Profile Edit ───────────────────────────────────────
+function openProfileEdit() {
+  const sub = document.getElementById('header-sub').textContent;
+  // Parse "Dresden · 167cm · 52.3kg" or load fresh from Supabase
+  db.from('profiles').select('*').eq('id', PROFILE_ID).single().then(({ data }) => {
+    if (!data) return;
+    document.getElementById('edit-name').value = data.name || '';
+    document.getElementById('edit-weight').value = data.weight_kg || '';
+    document.getElementById('edit-height').value = data.height_cm || '';
+    document.getElementById('edit-location').value = data.location || '';
+    document.getElementById('edit-goal').value = data.goal || '';
+    document.getElementById('profile-modal').style.display = 'block';
   });
 }
 
-async function confirmDelete(id, table, containerEl) {
-  if (!confirm('Wirklich löschen?')) {
-    // Snap back
-    const item = containerEl.querySelector('.swipe-item');
-    const btn = containerEl.querySelector('.swipe-delete-btn');
-    item.style.transition = 'transform 0.2s ease';
-    item.style.transform = 'translateX(0)';
-    btn.style.transition = 'transform 0.2s ease';
-    btn.style.transform = 'translateX(100%)';
-    btn.classList.remove('visible');
-    return;
-  }
-  const { error } = await db.from(table).delete().eq('id', id);
-  if (error) {
-    showToast('Fehler beim Löschen: ' + error.message, false);
-    return;
-  }
-  // Animate removal
-  containerEl.style.transition = 'opacity 0.3s ease, max-height 0.3s ease';
-  containerEl.style.opacity = '0';
-  containerEl.style.maxHeight = containerEl.offsetHeight + 'px';
-  setTimeout(() => { containerEl.style.maxHeight = '0'; containerEl.style.marginBottom = '0'; }, 10);
-  setTimeout(() => { containerEl.remove(); }, 330);
-  showToast('Eintrag gelöscht!');
-  // Refresh dashboard if needed
-  if (currentTab === 'dashboard') loadDashboard();
-  else loadDashboard();
-  if (table === 'workouts') loadActivityCalendar();
+function closeProfileEdit() {
+  document.getElementById('profile-modal').style.display = 'none';
 }
 
-// ── Activity Calendar ──────────────────────────────────────────
+async function saveProfileEdit() {
+  const updates = {
+    name:      document.getElementById('edit-name').value.trim(),
+    weight_kg: parseFloat(document.getElementById('edit-weight').value) || null,
+    height_cm: parseInt(document.getElementById('edit-height').value) || null,
+    location:  document.getElementById('edit-location').value.trim(),
+    goal:      document.getElementById('edit-goal').value.trim()
+  };
+  const { error } = await db.from('profiles').update(updates).eq('id', PROFILE_ID);
+  if (error) { showToast('Fehler: ' + error.message, false); return; }
+  closeProfileEdit();
+  await loadProfile();
+  showToast('Profil gespeichert! ✅');
+}
+
+// Close modal on backdrop click
+document.addEventListener('click', e => {
+  const modal = document.getElementById('profile-modal');
+  if (modal && modal.style.display === 'block' && e.target === modal) closeProfileEdit();
+});
+
+
 async function loadActivityCalendar() {
   const wrap = document.getElementById('activity-calendar-wrap');
   if (!wrap) return;
@@ -1663,46 +1713,6 @@ async function loadActivityCalendar() {
     });
   });
 }
-
-// ── Profile Edit ───────────────────────────────────────
-function openProfileEdit() {
-  const sub = document.getElementById('header-sub').textContent;
-  // Parse "Dresden · 167cm · 52.3kg" or load fresh from Supabase
-  db.from('profiles').select('*').eq('id', PROFILE_ID).single().then(({ data }) => {
-    if (!data) return;
-    document.getElementById('edit-name').value = data.name || '';
-    document.getElementById('edit-weight').value = data.weight_kg || '';
-    document.getElementById('edit-height').value = data.height_cm || '';
-    document.getElementById('edit-location').value = data.location || '';
-    document.getElementById('edit-goal').value = data.goal || '';
-    document.getElementById('profile-modal').style.display = 'block';
-  });
-}
-
-function closeProfileEdit() {
-  document.getElementById('profile-modal').style.display = 'none';
-}
-
-async function saveProfileEdit() {
-  const updates = {
-    name:      document.getElementById('edit-name').value.trim(),
-    weight_kg: parseFloat(document.getElementById('edit-weight').value) || null,
-    height_cm: parseInt(document.getElementById('edit-height').value) || null,
-    location:  document.getElementById('edit-location').value.trim(),
-    goal:      document.getElementById('edit-goal').value.trim()
-  };
-  const { error } = await db.from('profiles').update(updates).eq('id', PROFILE_ID);
-  if (error) { showToast('Fehler: ' + error.message, false); return; }
-  closeProfileEdit();
-  await loadProfile();
-  showToast('Profil gespeichert! ✅');
-}
-
-// Close modal on backdrop click
-document.addEventListener('click', e => {
-  const modal = document.getElementById('profile-modal');
-  if (modal && modal.style.display === 'block' && e.target === modal) closeProfileEdit();
-});
 
 // ── Init ────────────────────────────────────────────────
 async function init() {

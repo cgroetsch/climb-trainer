@@ -604,7 +604,7 @@
       user-select: none;
       z-index: 1;
     }
-    .swipe-delete-btn.visible { transform: translateX(0); }
+    .swipe-delete-btn.visible { transform: translateX(0) !important; }
     .swipe-delete-btn span { font-size: 18px; }
     .swipe-item {
       position: relative;
@@ -638,9 +638,29 @@
         </svg>
         <span class="header-title">Climb <span>Trainer</span></span>
       </div>
-      <div class="header-badge" id="header-badge">NK2 U17</div>
+      <div class="header-badge" id="header-badge" onclick="openProfileEdit()" style="cursor:pointer" title="Profil bearbeiten">NK2 U17</div>
     </div>
-    <div class="header-sub" id="header-sub">Lade Profil…</div>
+    <div class="header-sub" id="header-sub" onclick="openProfileEdit()" style="cursor:pointer" title="Profil bearbeiten">Lade Profil…</div>
+  </div>
+
+  <!-- Profile Edit Modal -->
+  <div id="profile-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.7);padding:20px;box-sizing:border-box;">
+    <div style="background:var(--card);border-radius:16px;padding:24px;width:100%;max-width:360px;margin:auto;margin-top:60px;border:1px solid rgba(0,230,118,0.2);">
+      <h3 style="margin:0 0 16px;color:var(--green);font-size:16px;">✏️ Profil bearbeiten</h3>
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <label style="font-size:12px;color:var(--text2);">Name<input id="edit-name" class="form-input" style="margin-top:4px;width:100%;box-sizing:border-box;" /></label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <label style="font-size:12px;color:var(--text2);">Gewicht (kg)<input id="edit-weight" type="number" step="0.1" class="form-input" style="margin-top:4px;width:100%;box-sizing:border-box;" /></label>
+          <label style="font-size:12px;color:var(--text2);">Größe (cm)<input id="edit-height" type="number" class="form-input" style="margin-top:4px;width:100%;box-sizing:border-box;" /></label>
+        </div>
+        <label style="font-size:12px;color:var(--text2);">Standort<input id="edit-location" class="form-input" style="margin-top:4px;width:100%;box-sizing:border-box;" /></label>
+        <label style="font-size:12px;color:var(--text2);">Ziel<input id="edit-goal" class="form-input" style="margin-top:4px;width:100%;box-sizing:border-box;" /></label>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:20px;">
+        <button onclick="closeProfileEdit()" style="flex:1;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:var(--bg2);color:var(--text);font-size:14px;cursor:pointer;">Abbrechen</button>
+        <button onclick="saveProfileEdit()" style="flex:1;padding:12px;border-radius:8px;border:none;background:var(--green);color:#000;font-size:14px;font-weight:700;cursor:pointer;">Speichern</button>
+      </div>
+    </div>
   </div>
 
   <!-- Screens -->
@@ -1156,7 +1176,7 @@ async function loadWorkouts() {
     <div class="date-heading">${fmtDate(date)}</div>
     ${ws.map(w => `
       <div class="swipe-container" data-id="${w.id}" data-table="workouts">
-        <div class="swipe-delete-btn" onclick="confirmDelete('${w.id}', 'workouts', this.closest('.swipe-container'))">
+        <div class="swipe-delete-btn" onclick="event.stopPropagation(); confirmDelete('${w.id}', 'workouts', this.closest('.swipe-container'))">
           <span>🗑</span>Löschen
         </div>
         <div class="swipe-item workout-item">
@@ -1242,7 +1262,7 @@ async function loadMeals() {
 function renderMeal(m) {
   return `
     <div class="swipe-container" data-id="${m.id}" data-table="meals">
-      <div class="swipe-delete-btn" onclick="confirmDelete('${m.id}', 'meals', this.closest('.swipe-container'))">
+      <div class="swipe-delete-btn" onclick="event.stopPropagation(); confirmDelete('${m.id}', 'meals', this.closest('.swipe-container'))">
         <span>🗑</span>Löschen
       </div>
       <div class="swipe-item meal-item">
@@ -1303,7 +1323,7 @@ async function loadStats() {
   }
   el.innerHTML = data.map(s => `
     <div class="swipe-container" data-id="${s.id}" data-table="stats">
-      <div class="swipe-delete-btn" onclick="confirmDelete('${s.id}', 'stats', this.closest('.swipe-container'))">
+      <div class="swipe-delete-btn" onclick="event.stopPropagation(); confirmDelete('${s.id}', 'stats', this.closest('.swipe-container'))">
         <span>🗑</span>Löschen
       </div>
       <div class="swipe-item stat-item">
@@ -1469,8 +1489,9 @@ function attachSwipe(container) {
     onEnd(e.clientX);
   });
 
-  // Close when clicking elsewhere
+  // Close when clicking elsewhere (but NOT when clicking delete button)
   document.addEventListener('click', e => {
+    if (container.querySelector('.swipe-delete-btn').contains(e.target)) return;
     if (!container.contains(e.target) && revealed) {
       item.style.transition = 'transform 0.2s ease';
       item.style.transform = 'translateX(0)';
@@ -1642,6 +1663,46 @@ async function loadActivityCalendar() {
     });
   });
 }
+
+// ── Profile Edit ───────────────────────────────────────
+function openProfileEdit() {
+  const sub = document.getElementById('header-sub').textContent;
+  // Parse "Dresden · 167cm · 52.3kg" or load fresh from Supabase
+  db.from('profiles').select('*').eq('id', PROFILE_ID).single().then(({ data }) => {
+    if (!data) return;
+    document.getElementById('edit-name').value = data.name || '';
+    document.getElementById('edit-weight').value = data.weight_kg || '';
+    document.getElementById('edit-height').value = data.height_cm || '';
+    document.getElementById('edit-location').value = data.location || '';
+    document.getElementById('edit-goal').value = data.goal || '';
+    document.getElementById('profile-modal').style.display = 'block';
+  });
+}
+
+function closeProfileEdit() {
+  document.getElementById('profile-modal').style.display = 'none';
+}
+
+async function saveProfileEdit() {
+  const updates = {
+    name:      document.getElementById('edit-name').value.trim(),
+    weight_kg: parseFloat(document.getElementById('edit-weight').value) || null,
+    height_cm: parseInt(document.getElementById('edit-height').value) || null,
+    location:  document.getElementById('edit-location').value.trim(),
+    goal:      document.getElementById('edit-goal').value.trim()
+  };
+  const { error } = await db.from('profiles').update(updates).eq('id', PROFILE_ID);
+  if (error) { showToast('Fehler: ' + error.message, false); return; }
+  closeProfileEdit();
+  await loadProfile();
+  showToast('Profil gespeichert! ✅');
+}
+
+// Close modal on backdrop click
+document.addEventListener('click', e => {
+  const modal = document.getElementById('profile-modal');
+  if (modal && modal.style.display === 'block' && e.target === modal) closeProfileEdit();
+});
 
 // ── Init ────────────────────────────────────────────────
 async function init() {

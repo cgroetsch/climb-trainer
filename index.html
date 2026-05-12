@@ -1125,7 +1125,7 @@ async function loadDashboard() {
   document.getElementById('dash-protein').textContent = Math.round(totProtein) + 'g';
 
   // Goals
-  const { data: goals } = await db.from('daily_goals').select('*').eq('profile_id', PROFILE_ID).single();
+  const { data: goals } = await db.from('daily_goals').select('*').eq('profile_id', PROFILE_ID).maybeSingle();
   const g = goals || { protein_g: 90, carbs_g: 250, calories: 2300 };
 
   // Macro ring
